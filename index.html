@@ -147,6 +147,10 @@
   }
 
   let waUrlPendiente='';
+  window.abrirWA=function(){
+    if(waUrlPendiente) window.open(waUrlPendiente,'_blank');
+    document.getElementById('modal-overlay').style.display='none';
+  };
 
   function mostrarModal(tipo,titulo,msg,waUrl=''){
     const iconEl=document.getElementById('modal-icon');
@@ -514,13 +518,13 @@ textarea{resize:vertical;min-height:60px}
 </style>
 </head>
 <body>
-<div class="header" style="padding:0 1.5rem">
-  <div style="display:flex;align-items:center;justify-content:space-between;min-height:70px;gap:12px">
-    <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0">
-      <h1 style="font-size:clamp(14px,2.5vw,20px);font-weight:600;line-height:1.3;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Laboratorio de Informática — Dpto. Matemática</h1>
-      <span style="font-size:clamp(11px,1.8vw,13px);opacity:.85;color:#fff;white-space:nowrap">Sistema de Reservas · FCEyT - UNSE</span>
+<div class="header" style="padding:0 1rem">
+  <div style="display:flex;align-items:center;justify-content:space-between;min-height:64px;gap:8px">
+    <div style="display:flex;flex-direction:column;justify-content:center;gap:2px;min-width:0;flex:1">
+      <h1 style="font-size:clamp(13px,2.2vw,20px);font-weight:600;line-height:1.3;color:#fff;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">Laboratorio de Informática — Dpto. Matemática</h1>
+      <span style="font-size:clamp(10px,1.5vw,13px);opacity:.85;color:#fff;white-space:nowrap">Sistema de Reservas · FCEyT - UNSE</span>
     </div>
-    <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:60px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
+    <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:clamp(44px,8vw,64px);width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
   </div>
 </div>
 <div class="nav">
@@ -636,7 +640,7 @@ textarea{resize:vertical;min-height:60px}
     <h2 id="modal-titulo" style="font-size:16px;font-weight:600;color:#2d3748;margin-bottom:.5rem"></h2>
     <p id="modal-msg" style="font-size:14px;color:#718096;line-height:1.6;margin-bottom:1.5rem"></p>
     <button class="btn btn-primary" onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%;margin-bottom:.75rem">Entendido</button>
-    <button id="modal-btn-wa" onclick="window.open(waUrlPendiente,'_blank');document.getElementById('modal-overlay').style.display='none'" style="display:none;width:100%;padding:.6rem 1.25rem;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#25d366;color:#fff">📲 Notificar por WhatsApp al administrador</button>
+    <button id="modal-btn-wa" onclick="abrirWA()" style="display:none;width:100%;padding:.6rem 1.25rem;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;border:none;background:#25d366;color:#fff">📲 Notificar por WhatsApp al administrador</button>
   </div>
 </div>
 
