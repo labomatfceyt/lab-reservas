@@ -24,98 +24,58 @@
   const MESES_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
   const DIAS_ES=['Lun','Mar','Mié','Jue','Vie','Sáb'];
   const H_INI=8, H_FIN=21, PX_H=60;
-  let semanaOffset=0, tipoActual='puntual', fechasEspecificas=[], todasReservas=[];
-
   const ADMIN_KEY='Labo@2026.';
-  let isAdmin=false;
+  let semanaOffset=0, tipoActual='puntual', fechasEspecificas=[], todasReservas=[], isAdmin=false;
 
   window.addEventListener('DOMContentLoaded', async ()=>{
-    // verificar si viene con ?admin=Labo@2026. en la URL
     const params=new URLSearchParams(window.location.search);
     isAdmin=params.get('admin')===ADMIN_KEY;
-
-    // mostrar pestaña admin solo si es admin
     const btnAdmin=document.getElementById('btn-admin');
     if(isAdmin) btnAdmin.style.display='';
     else btnAdmin.style.display='none';
-
     populateHoras();
-    const today=new Date().toISOString().slice(0,10);
-    ['fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{
-      const el=document.getElementById(id);
-      if(el){el.value= id==='fecha-esp-input' ? '' : today; el.min=today;}
-    });
+    const today=isoDate(new Date());
+    document.getElementById('fecha-puntual').value=today;
+    document.getElementById('fecha-puntual').min=today;
+    document.getElementById('fecha-semanal-ini').min=today;
     await cargarReservas();
     if(isAdmin) updateNotifAdmin();
   });
 
   async function cargarReservas(){
-    try {
-      const q = query(collection(db,'reservas'), orderBy('fecha'));
-      const snap = await getDocs(q);
-      todasReservas = snap.docs.map(d=>({...d.data(), _docId: d.id}));
+    try{
+      const q=query(collection(db,'reservas'),orderBy('fecha'));
+      const snap=await getDocs(q);
+      todasReservas=snap.docs.map(d=>({...d.data(),_docId:d.id}));
       updateNotifAdmin();
-    } catch(e){ console.error('Error cargando reservas:',e); }
+    }catch(e){console.error('Error:',e);}
   }
 
   function isoDate(d){
-    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+    const y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0'),dd=String(d.getDate()).padStart(2,'0');
     return`${y}-${m}-${dd}`;
   }
-  function parseLocalDate(str){
-    const[y,m,d]=str.split('-').map(Number);
-    return new Date(y,m-1,d);
-  }
+  function parseLocalDate(str){const[y,m,d]=str.split('-').map(Number);return new Date(y,m-1,d);}
   function formatFecha(f){const[y,m,d]=f.split('-');return`${d} ${MESES_ES[parseInt(m)-1]} ${y}`;}
   function t2min(t){const[h,m]=t.split(':').map(Number);return h*60+m;}
 
   function getWeekDates(off){
-    const today=new Date(), dow=today.getDay()||7;
-    const mon=new Date(today); mon.setDate(today.getDate()-dow+1+off*7);
+    const today=new Date(),dow=today.getDay()||7;
+    const mon=new Date(today);mon.setDate(today.getDate()-dow+1+off*7);
     return Array.from({length:6},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
   }
 
   function populateHoras(){
-    const optsIni=[], optsFin=[];
-    for(let h=H_INI;h<H_FIN;h++){
-      ['00','30'].forEach(m=>{
-        const t=`${String(h).padStart(2,'0')}:${m}`;
-        optsIni.push(`<option value="${t}">${t}</option>`);
-      });
-    }
-    for(let h=H_INI;h<=H_FIN;h++){
-      ['00','30'].forEach(m=>{
-        if(h===H_FIN&&m==='30') return;
-        const t=`${String(h).padStart(2,'0')}:${m}`;
-        optsFin.push(`<option value="${t}">${t}</option>`);
-      });
-    }
+    const optsIni=[],optsFin=[];
+    for(let h=H_INI;h<H_FIN;h++) ['00','30'].forEach(m=>{const t=`${String(h).padStart(2,'0')}:${m}`;optsIni.push(`<option value="${t}">${t}</option>`);});
+    for(let h=H_INI;h<=H_FIN;h++) ['00','30'].forEach(m=>{if(h===H_FIN&&m==='30')return;const t=`${String(h).padStart(2,'0')}:${m}`;optsFin.push(`<option value="${t}">${t}</option>`);});
     document.getElementById('hora-inicio').innerHTML=optsIni.join('');
     document.getElementById('hora-fin').innerHTML=optsFin.join('');
-    document.getElementById('hora-inicio').value=`${String(H_INI).padStart(2,'0')}:00`;
-    document.getElementById('hora-fin').value=`${String(H_INI+1).padStart(2,'0')}:00`;
+    document.getElementById('hora-inicio').value='08:00';
+    document.getElementById('hora-fin').value='09:00';
   }
 
-  function populateHorasEspecifica(){
-    let optsIni='', optsFin='';
-    for(let h=H_INI;h<H_FIN;h++) ['00','30'].forEach(m=>{const t=`${String(h).padStart(2,'0')}:${m}`;optsIni+=`<option value="${t}">${t}</option>`;});
-    for(let h=H_INI;h<=H_FIN;h++) ['00','30'].forEach(m=>{if(h===H_FIN&&m==='30')return;const t=`${String(h).padStart(2,'0')}:${m}`;optsFin+=`<option value="${t}">${t}</option>`;});
-    const row=document.getElementById('esp-row');
-    // eliminar selectores previos si existen
-    ['esp-hi','esp-hf'].forEach(id=>{const el=document.getElementById(id);if(el)el.remove();});
-    // crear e insertar antes del botón
-    const btn=row.querySelector('button');
-    const selIni=document.createElement('select');
-    selIni.id='esp-hi'; selIni.style.width='90px'; selIni.innerHTML=optsIni;
-    selIni.value=`${String(H_INI).padStart(2,'0')}:00`;
-    row.insertBefore(selIni,btn);
-    const selFin=document.createElement('select');
-    selFin.id='esp-hf'; selFin.style.width='90px'; selFin.innerHTML=optsFin;
-    selFin.value=`${String(H_INI+1).padStart(2,'0')}:00`;
-    row.insertBefore(selFin,btn);
-  }
-
-  window.showSection = async function(id, btn){
+  window.showSection=async function(id,btn){
     document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
     document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
     document.getElementById(id).classList.add('active');
@@ -126,54 +86,72 @@
     if(id==='calendario') renderCalendario();
   };
 
-  window.setTipo = function(tipo, btn){
+  window.setTipo=function(tipo,btn){
     tipoActual=tipo;
-    document.querySelectorAll('.tipo-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+    document.querySelectorAll('.tipo-tab').forEach(b=>b.classList.remove('active'));btn.classList.add('active');
     ['puntual','semanal','especifica'].forEach(t=>document.getElementById('tipo-'+t).style.display=t===tipo?'block':'none');
-    const today=new Date().toISOString().slice(0,10);
-    ['fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{
-      const el=document.getElementById(id);if(el) el.min=today;
-    });
-    // re-popular selectores de hora específica cada vez que se activa
+    const today=isoDate(new Date());
+    document.getElementById('fecha-puntual').min=today;
+    document.getElementById('fecha-semanal-ini').min=today;
     if(tipo==='especifica'){
-      const today=isoDate(new Date());
       document.getElementById('fecha-esp-input').min=today;
     }
   };
 
-  window.agregarFecha = function(){
-    const inp=document.getElementById('fecha-esp-input'), val=inp.value;
-    if(!val||fechasEspecificas.includes(val)) return;
-    fechasEspecificas.push(val); fechasEspecificas.sort(); renderChips(); inp.value='';
+  window.agregarFecha=function(){
+    const fEl=document.getElementById('fecha-esp-input');
+    const hiEl=document.getElementById('esp-hi');
+    const hfEl=document.getElementById('esp-hf');
+    const fecha=fEl.value;
+    const hi=hiEl.value;
+    const hf=hfEl.value;
+    if(!fecha){mostrarModal('error','Falta la fecha','Seleccioná una fecha.');return;}
+    if(!hi||!hf){mostrarModal('error','Falta el horario','Completá hora de inicio y fin.');return;}
+    if(hi>=hf){mostrarModal('error','Horario inválido','La hora de fin debe ser posterior al inicio.');return;}
+    fechasEspecificas.push({fecha,hi,hf});
+    fechasEspecificas.sort((a,b)=>a.fecha<b.fecha?-1:1);
+    renderChips();
+    fEl.value='';
+    hiEl.value='';
+    hfEl.value='';
   };
-  window.quitarFecha = function(f){fechasEspecificas=fechasEspecificas.filter(x=>x!==f);renderChips();};
+
+  window.quitarFecha=function(idx){fechasEspecificas.splice(idx,1);renderChips();};
 
   function renderChips(){
-    document.getElementById('fechas-chips').innerHTML=fechasEspecificas.map(f=>`<div class="fecha-chip">${formatFecha(f)}<button onclick="quitarFecha('${f}')">&times;</button></div>`).join('');
+    document.getElementById('fechas-chips').innerHTML=fechasEspecificas.map((f,i)=>
+      `<div class="fecha-chip">${formatFecha(f.fecha)} · ${f.hi}–${f.hf}<button onclick="quitarFecha(${i})">&times;</button></div>`
+    ).join('');
   }
 
-  document.addEventListener('change',e=>{if(e.target.id==='fecha-semanal-ini'||e.target.id==='meses-rep') updatePreviewSemanal();});
+  document.addEventListener('change',e=>{if(e.target.id==='fecha-semanal-ini'||e.target.id==='meses-rep')updatePreviewSemanal();});
 
   function updatePreviewSemanal(){
-    const ini=document.getElementById('fecha-semanal-ini').value, meses=parseInt(document.getElementById('meses-rep').value);
-    if(!ini) return;
+    const ini=document.getElementById('fecha-semanal-ini').value,meses=parseInt(document.getElementById('meses-rep').value);
+    if(!ini)return;
     const fechas=generarFechasSemana(ini,meses);
     document.getElementById('preview-semanal').textContent=`Se crearán ${fechas.length} sesiones: ${formatFecha(fechas[0])} al ${formatFecha(fechas[fechas.length-1])}`;
   }
 
   function generarFechasSemana(ini,meses){
-    const fechas=[], fin=parseLocalDate(ini); fin.setMonth(fin.getMonth()+meses);
+    const fechas=[],fin=parseLocalDate(ini);fin.setMonth(fin.getMonth()+meses);
     let cur=parseLocalDate(ini);
     while(cur<=fin){fechas.push(isoDate(cur));cur.setDate(cur.getDate()+7);}
     return fechas;
   }
 
-  function mostrarModal(tipo, titulo, msg){
+  function showAlert(id,msg,type){
+    const el=document.getElementById(id);
+    el.className=`alert alert-${type}`;el.textContent=msg;el.style.display='block';
+    setTimeout(()=>el.style.display='none',5000);
+  }
+
+  function mostrarModal(tipo,titulo,msg){
     const iconEl=document.getElementById('modal-icon');
     if(tipo==='exito'){
       iconEl.style.background='#f0fff4';
       iconEl.innerHTML='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38a169" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
-    } else {
+    }else{
       iconEl.style.background='#fff5f5';
       iconEl.innerHTML='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
     }
@@ -182,21 +160,15 @@
     document.getElementById('modal-overlay').style.display='flex';
   }
 
-  function showAlert(id,msg,type){
-    const el=document.getElementById(id);
-    el.className=`alert alert-${type}`; el.textContent=msg; el.style.display='block';
-    setTimeout(()=>el.style.display='none',5000);
-  }
-
   function updateNotifAdmin(){
-    if(!isAdmin) return;
+    if(!isAdmin)return;
     const pend=todasReservas.filter(r=>r.estado==='pendiente').length;
     const btn=document.getElementById('btn-admin');
     let dot=btn.querySelector('.badge-notif');
     if(pend>0){
       if(!dot){dot=document.createElement('span');dot.className='badge-notif';btn.appendChild(dot);}
       dot.textContent=pend>9?'9+':pend;
-    } else if(dot) dot.remove();
+    }else if(dot)dot.remove();
   }
 
   function actualizarFiltroDocentes(){
@@ -206,97 +178,98 @@
     sel.innerHTML='<option value="">Todos los docentes</option>'+docentes.map(d=>`<option value="${d}"${d===cur?'selected':''}>${d}</option>`).join('');
   }
 
-  window.enviarSolicitud = async function(){
+  window.enviarSolicitud=async function(){
     const v=id=>document.getElementById(id).value.trim();
-    const docente=v('docente'), materia=v('materia'), hi=v('hora-inicio'), hf=v('hora-fin');
-    if(!docente||!materia||!hi||!hf) return showAlert('alert-form','Completá todos los campos obligatorios (*)','error');
-    if(hi>=hf) return showAlert('alert-form','La hora de fin debe ser posterior al inicio.','error');
+    const docente=v('docente'),materia=v('materia'),hi=v('hora-inicio'),hf=v('hora-fin');
+    if(!docente||!materia) return mostrarModal('error','Campos incompletos','Completá todos los campos obligatorios (*).');
 
     let fechas=[];
-    if(tipoActual==='puntual'){const f=v('fecha-puntual');if(!f) return showAlert('alert-form','Seleccioná una fecha.','error');fechas=[f];}
-    else if(tipoActual==='semanal'){const ini=v('fecha-semanal-ini'),meses=parseInt(document.getElementById('meses-rep').value);if(!ini) return showAlert('alert-form','Seleccioná la fecha de inicio.','error');fechas=generarFechasSemana(ini,meses);}
-    else{if(!fechasEspecificas.length) return showAlert('alert-form','Agregá al menos una fecha.','error');fechas=[...fechasEspecificas];}
-
-    const conflictos=[];
-    fechas.forEach(f=>{
-      const cx=todasReservas.find(r=>r.fecha===f&&r.estado!=='cancelada'&&r.horaInicio<hf&&r.horaFin>hi);
-      if(cx) conflictos.push(`${formatFecha(f)} (conflicto con "${cx.materia}")`);
-    });
-    if(conflictos.length){
-      mostrarModal('error','No se puede realizar la reserva',
-        conflictos.map(c=>`⚠ ${c}`).join('<br>'));
-      return;
+    if(tipoActual==='puntual'){
+      const f=v('fecha-puntual');if(!f)return mostrarModal('error','Falta la fecha','Seleccioná una fecha.');
+      if(!hi||!hf)return mostrarModal('error','Falta el horario','Seleccioná hora de inicio y fin.');
+      if(hi>=hf)return mostrarModal('error','Horario inválido','La hora de fin debe ser posterior al inicio.');
+      fechas=[f];
+    }else if(tipoActual==='semanal'){
+      const ini=v('fecha-semanal-ini'),meses=parseInt(document.getElementById('meses-rep').value);
+      if(!ini)return mostrarModal('error','Falta la fecha','Seleccioná la fecha de inicio.');
+      if(!hi||!hf)return mostrarModal('error','Falta el horario','Seleccioná hora de inicio y fin.');
+      if(hi>=hf)return mostrarModal('error','Horario inválido','La hora de fin debe ser posterior al inicio.');
+      fechas=generarFechasSemana(ini,meses);
+    }else{
+      if(!fechasEspecificas.length)return mostrarModal('error','Sin fechas','Agregá al menos una fecha.');
     }
 
-    const grupoId=fechas.length>1?'g'+Date.now():null;
-    const base={docente,materia,carrera:v('carrera'),actividad:v('actividad'),obs:v('obs'),horaInicio:hi,horaFin:hf,estado:'pendiente',creado:new Date().toLocaleString('es-AR'),grupoId,totalGrupo:fechas.length};
-
-    try {
-      showAlert('alert-form','Guardando...','success');
-      for(const f of fechas){
-        await addDoc(collection(db,'reservas'),{...base,fecha:f});
+    const conflictos=[];
+    if(tipoActual==='especifica'){
+      for(const fe of fechasEspecificas){
+        const cx=todasReservas.find(r=>r.fecha===fe.fecha&&r.estado!=='cancelada'&&r.horaInicio<fe.hf&&r.horaFin>fe.hi);
+        if(cx) conflictos.push(`${formatFecha(fe.fecha)} ${fe.hi}–${fe.hf} (conflicto con "${cx.materia}" ${cx.horaInicio}–${cx.horaFin})`);
       }
-      ['docente','materia','carrera','actividad','obs','fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
-      fechasEspecificas=[]; renderChips();
+    }else{
+      fechas.forEach(f=>{
+        const cx=todasReservas.find(r=>r.fecha===f&&r.estado!=='cancelada'&&r.horaInicio<hf&&r.horaFin>hi);
+        if(cx) conflictos.push(`${formatFecha(f)} ${hi}–${hf} (conflicto con "${cx.materia}" ${cx.horaInicio}–${cx.horaFin})`);
+      });
+    }
+    if(conflictos.length){mostrarModal('error','No se puede realizar la reserva',conflictos.map(c=>`⚠ ${c}`).join('<br>'));return;}
+
+    const total=tipoActual==='especifica'?fechasEspecificas.length:fechas.length;
+    const grupoId=total>1?'g'+Date.now():null;
+    const base={docente,materia,carrera:v('carrera'),actividad:v('actividad'),obs:v('obs'),estado:'pendiente',creado:new Date().toLocaleString('es-AR'),grupoId,totalGrupo:total};
+
+    try{
+      if(tipoActual==='especifica'){
+        for(const fe of fechasEspecificas) await addDoc(collection(db,'reservas'),{...base,fecha:fe.fecha,horaInicio:fe.hi,horaFin:fe.hf});
+      }else{
+        for(const f of fechas) await addDoc(collection(db,'reservas'),{...base,fecha:f,horaInicio:hi,horaFin:hf});
+      }
+      ['docente','materia','carrera','actividad','obs','fecha-puntual','fecha-semanal-ini'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      fechasEspecificas=[];renderChips();
       document.getElementById('preview-semanal').textContent='';
       await cargarReservas();
       mostrarModal('exito','¡Solicitud enviada!','Tu solicitud de reserva fue registrada correctamente.<br>Aguardá la confirmación del administrador.');
-      document.getElementById('alert-form').style.display='none';
-    } catch(e){ showAlert('alert-form','Error al guardar: '+e.message,'error'); }
+    }catch(e){mostrarModal('error','Error al guardar',e.message);}
   };
 
-  window.cancelarReserva = async function(docId){
-    if(!docId){ alert('Error: ID de reserva no válido.'); return; }
-    if(!confirm('¿Cancelar esta reserva? Se eliminará de la lista.')) return;
-    try{
-      await deleteDoc(doc(db,'reservas',docId));
-      await cargarReservas();
-      window.renderReservas();
-      renderAdmin();
-    }catch(e){ alert('Error al eliminar: '+e.message); }
+  window.cancelarReserva=async function(docId){
+    if(!docId){alert('Error: ID no válido.');return;}
+    if(!confirm('¿Cancelar esta reserva? Se eliminará de la lista.'))return;
+    try{await deleteDoc(doc(db,'reservas',docId));await cargarReservas();window.renderReservas();renderAdmin();}
+    catch(e){alert('Error: '+e.message);}
   };
 
-  window.cancelarGrupo = async function(grupoId){
-    if(!grupoId){ alert('Error: ID de grupo no válido.'); return; }
-    if(!confirm('¿Eliminar todas las sesiones de este grupo?')) return;
+  window.cancelarGrupo=async function(grupoId){
+    if(!grupoId){alert('Error: ID no válido.');return;}
+    if(!confirm('¿Eliminar todas las sesiones de este grupo?'))return;
     try{
       const todas=todasReservas.filter(r=>r.grupoId===grupoId);
-      if(!todas.length){ alert('No se encontraron sesiones para eliminar.'); return; }
       for(const r of todas) await deleteDoc(doc(db,'reservas',r._docId));
-      await cargarReservas();
-      window.renderReservas();
-      renderAdmin();
-    }catch(e){ alert('Error al eliminar: '+e.message); }
+      await cargarReservas();window.renderReservas();renderAdmin();
+    }catch(e){alert('Error: '+e.message);}
   };
 
-  window.cambiarEstado = async function(docId, estado){
+  window.cambiarEstado=async function(docId,estado){
     try{
       if(estado==='cancelada') await deleteDoc(doc(db,'reservas',docId));
       else await updateDoc(doc(db,'reservas',docId),{estado});
-      await cargarReservas(); renderAdmin();
-    }catch(e){ alert('Error: '+e.message); }
+      await cargarReservas();renderAdmin();
+    }catch(e){alert('Error: '+e.message);}
   };
 
-  window.cambiarGrupo = async function(grupoId, estado){
+  window.cambiarGrupo=async function(grupoId,estado){
     try{
       const pend=todasReservas.filter(r=>r.grupoId===grupoId&&r.estado==='pendiente');
       for(const r of pend){
         if(estado==='cancelada') await deleteDoc(doc(db,'reservas',r._docId));
         else await updateDoc(doc(db,'reservas',r._docId),{estado});
       }
-      await cargarReservas(); renderAdmin();
-    }catch(e){ alert('Error: '+e.message); }
+      await cargarReservas();renderAdmin();
+    }catch(e){alert('Error: '+e.message);}
   };
 
-  window.cerrarModal = function(){
-    document.getElementById('modal-overlay').style.display='none';
-  };
+  window.toggleSesiones=function(id){const el=document.getElementById(id);el.style.display=el.style.display==='none'?'flex':'none';};
 
-  window.toggleSesiones = function(id){
-    const el=document.getElementById(id); el.style.display=el.style.display==='none'?'flex':'none';
-  };
-
-  window.renderReservas = function(){
+  window.renderReservas=function(){
     const fe=document.getElementById('filtro-estado').value;
     const buscar=document.getElementById('buscar').value.toLowerCase();
     const docenteF=document.getElementById('filtro-docente').value;
@@ -304,24 +277,21 @@
     document.getElementById('stat-total').textContent=reales.length;
     document.getElementById('stat-conf').textContent=reales.filter(r=>r.estado==='confirmada').length;
     document.getElementById('stat-pend').textContent=reales.filter(r=>r.estado==='pendiente').length;
-
     const filtrada=reales.filter(r=>{
-      if(fe&&r.estado!==fe) return false;
-      if(docenteF&&r.docente!==docenteF) return false;
-      if(buscar&&!r.docente.toLowerCase().includes(buscar)&&!r.materia.toLowerCase().includes(buscar)) return false;
+      if(fe&&r.estado!==fe)return false;
+      if(docenteF&&r.docente!==docenteF)return false;
+      if(buscar&&!r.docente.toLowerCase().includes(buscar)&&!r.materia.toLowerCase().includes(buscar))return false;
       return true;
     });
-
-    const grupos={}, singles=[];
+    const grupos={},singles=[];
     filtrada.forEach(r=>{if(r.grupoId){if(!grupos[r.grupoId])grupos[r.grupoId]=[];grupos[r.grupoId].push(r);}else singles.push(r);});
     const items=[...singles.map(r=>({tipo:'single',r})),...Object.values(grupos).map(s=>({tipo:'grupo',sesiones:s}))];
     items.sort((a,b)=>{const fa=a.tipo==='single'?a.r.fecha:a.sesiones[0].fecha,fb=b.tipo==='single'?b.r.fecha:b.sesiones[0].fecha;return fa<fb?-1:1;});
-
     const cont=document.getElementById('lista-reservas');
     if(!items.length){cont.innerHTML='<div class="empty">No se encontraron reservas.</div>';return;}
     cont.innerHTML=items.map(item=>{
       if(item.tipo==='single'){
-        const r=item.r, canC=r.estado==='confirmada'||r.estado==='pendiente';
+        const r=item.r,canC=r.estado==='confirmada'||r.estado==='pendiente';
         return`<div class="reserva-item"><div class="ri-top"><div class="reserva-info">
           <h3>${r.materia}${r.carrera?' — '+r.carrera:''}</h3>
           <p>Docente: <strong>${r.docente}</strong>${r.actividad?' · '+r.actividad:''}</p>
@@ -329,8 +299,8 @@
           </div><div class="reserva-actions"><span class="badge badge-${r.estado}">${r.estado}</span>
           ${canC?`<button class="btn btn-danger btn-sm" onclick="cancelarReserva('${r._docId}')">Cancelar</button>`:''}
           <small style="font-size:10px;color:#a0aec0">${r.creado}</small></div></div></div>`;
-      } else {
-        const s0=item.sesiones[0], sId='ses-'+s0.grupoId;
+      }else{
+        const s0=item.sesiones[0],sId='ses-'+s0.grupoId;
         const activas=item.sesiones.filter(s=>s.estado!=='cancelada').length;
         return`<div class="reserva-item grupo-header"><div class="ri-top"><div class="reserva-info">
           <h3>${s0.materia}${s0.carrera?' — '+s0.carrera:''} <span class="badge badge-grupo">Grupo · ${item.sesiones.length} sesiones</span></h3>
@@ -353,7 +323,7 @@
   };
 
   function renderAdmin(){
-    const grupos={}, singles=[];
+    const grupos={},singles=[];
     todasReservas.filter(r=>r.estado==='pendiente').forEach(r=>{if(r.grupoId){if(!grupos[r.grupoId])grupos[r.grupoId]=[];grupos[r.grupoId].push(r);}else singles.push(r);});
     const cont=document.getElementById('lista-admin');
     const items=[...singles.map(r=>({tipo:'single',r})),...Object.values(grupos).map(s=>({tipo:'grupo',sesiones:s}))];
@@ -386,11 +356,11 @@
     }).join('');
   }
 
-  window.moverSemana = function(dir){semanaOffset=dir===0?0:semanaOffset+dir;renderCalendario();};
+  window.moverSemana=function(dir){semanaOffset=dir===0?0:semanaOffset+dir;renderCalendario();};
 
   function renderCalendario(){
-    const dias=getWeekDates(semanaOffset), todayStr=isoDate(new Date());
-    const ini=dias[0], fin=dias[5];
+    const dias=getWeekDates(semanaOffset),todayStr=isoDate(new Date());
+    const ini=dias[0],fin=dias[5];
     document.getElementById('cal-titulo').textContent=`${ini.getDate()} ${MESES_ES[ini.getMonth()]} — ${fin.getDate()} ${MESES_ES[fin.getMonth()]} ${fin.getFullYear()}`;
     let head=`<div class="gcal-head-tz"></div>`;
     dias.forEach(d=>{const ds=isoDate(d),isT=ds===todayStr;head+=`<div class="gcal-head-day${isT?' today':''}"><span class="num">${d.getDate()}</span>${DIAS_ES[(d.getDay()+6)%7]}</div>`;});
@@ -399,28 +369,28 @@
     let th=`<div class="gcal-hour-label">08</div>`;
     for(let h=H_INI+1;h<=H_FIN;h++){const lb=h<12?`${h} AM`:h===12?'12 PM':h===21?'21':`${h-12} PM`;th+=`<div class="gcal-hour-label">${lb}</div>`;}
     document.getElementById('gcal-times').innerHTML=th;
-    const gridH=totalH*PX_H; let dh='';
+    const gridH=totalH*PX_H;let dh='';
     dias.forEach(d=>{
-      const ds=isoDate(d); let col=`<div class="gcal-day-col" style="height:${gridH}px">`;
+      const ds=isoDate(d);let col=`<div class="gcal-day-col" style="height:${gridH}px">`;
       for(let h=0;h<=totalH;h++) col+=`<div class="gcal-hline" style="top:${h*PX_H}px"></div>`;
       todasReservas.filter(r=>r.fecha===ds).forEach(r=>{
-        const top=(t2min(r.horaInicio)-H_INI*60)/60*PX_H, height=(t2min(r.horaFin)-t2min(r.horaInicio))/60*PX_H-3;
+        const top=(t2min(r.horaInicio)-H_INI*60)/60*PX_H,height=(t2min(r.horaFin)-t2min(r.horaInicio))/60*PX_H-3;
         const lbl=r.materia.length>22?r.materia.slice(0,20)+'…':r.materia;
         col+=`<div class="gcal-block ${r.estado}" style="top:${top}px;height:${height}px" title="${r.materia} · ${r.docente}"><strong>${lbl}</strong><span>${r.docente.split(' ').slice(0,2).join(' ')}</span><span>${r.horaInicio}–${r.horaFin}</span></div>`;
       });
-      col+='</div>'; dh+=col;
+      col+='</div>';dh+=col;
     });
     document.getElementById('gcal-days').innerHTML=dh;
   }
 
-  window.exportarExcel = function(){
+  window.exportarExcel=function(){
     const filas=todasReservas.map(r=>({'Fecha':formatFecha(r.fecha),'Horario':r.horaInicio+'-'+r.horaFin,'Materia':r.materia,'Docente':r.docente,'Carrera':r.carrera||'','Actividad':r.actividad||'','Estado':r.estado,'Obs.':r.obs||''}));
     const ws=XLSX.utils.json_to_sheet(filas);
-    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Reservas');
+    const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Reservas');
     XLSX.writeFile(wb,'reservas_laboratorio.xlsx');
   };
 
-  window.exportarTXT = function(){
+  window.exportarTXT=function(){
     const colW=[28,20,52,40,36,32,22];
     const pad=(s,w)=>{const str=String(s||'');return str.length>=w?str.slice(0,w-1)+'…':str+' '.repeat(w-str.length);};
     const header=['Fecha','Horario','Materia','Docente','Carrera','Actividad','Estado'];
@@ -433,16 +403,14 @@
     todasReservas.forEach(r=>txt+=fmtRow([formatFecha(r.fecha),r.horaInicio+'–'+r.horaFin,r.materia,r.docente,r.carrera||'',r.actividad||'',r.estado])+'\n');
     txt+='└'+lineB+'┘\n';
     const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
-    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='reservas_laboratorio.txt';
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='reservas_laboratorio.txt';
+    document.body.appendChild(a);a.click();document.body.removeChild(a);
   };
 </script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:system-ui,sans-serif;background:#f0f4f8;color:#1a202c;min-height:100vh}
 .header{background:#1a56db;color:#fff;padding:1rem 1.5rem}
-.header h1{font-size:18px;font-weight:500}
-.header span{font-size:13px;opacity:.8}
 .nav{display:flex;background:#fff;border-bottom:1px solid #e2e8f0}
 .nav button{flex:1;padding:.75rem .25rem;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:#718096;border-bottom:2px solid transparent;transition:.2s;position:relative}
 .nav button.active{color:#1a56db;border-bottom-color:#1a56db}
@@ -489,8 +457,8 @@ textarea{resize:vertical;min-height:60px}
 .alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030}
 .alert-success{background:#f0fff4;border:1px solid #c6f6d5;color:#276749}
 .toolbar{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
-.toolbar select,.toolbar input{width:auto;font-size:13px;padding:.45rem .7rem}
-.toolbar input{min-width:200px}
+.toolbar select,.toolbar input[type=text]{width:auto;font-size:13px;padding:.45rem .7rem}
+.toolbar input[type=text]{min-width:200px}
 .toolbar-right{margin-left:auto;display:flex;gap:.5rem}
 .stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.5rem}
 .stat-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:1rem;text-align:center}
@@ -503,6 +471,7 @@ textarea{resize:vertical;min-height:60px}
 .fecha-chip-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
 .fecha-chip{background:#ebf4ff;color:#1a56db;border-radius:20px;padding:.2rem .7rem;font-size:12px;display:flex;align-items:center;gap:5px}
 .fecha-chip button{background:none;border:none;cursor:pointer;color:#1a56db;font-size:14px;line-height:1;padding:0}
+.esp-row{display:grid;grid-template-columns:1fr 110px 110px auto;gap:.5rem;align-items:center;margin-bottom:.5rem}
 .cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
 .cal-nav h3{font-size:14px;font-weight:600;color:#4a5568}
 .cal-nav-btns{display:flex;gap:6px}
@@ -531,18 +500,18 @@ textarea{resize:vertical;min-height:60px}
 .legend{display:flex;gap:1rem;font-size:11px;margin-top:.75rem;flex-wrap:wrap}
 .legend-item{display:flex;align-items:center;gap:5px}
 .legend-dot{width:12px;height:10px;border-radius:2px;border-left:3px solid transparent}
-@media(max-width:640px){.form-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.toolbar-right{margin-left:0}}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.toolbar-right{margin-left:0}.esp-row{grid-template-columns:1fr 1fr;grid-template-rows:auto auto}}
 </style>
 </head>
 <body>
 <div class="header" style="padding:1rem 1.5rem">
   <div style="display:flex;align-items:center;justify-content:space-between">
-    <div style="display:flex;align-items:center;gap:16px">
-      <div>
-        <h1 style="font-size:20px;font-weight:600;line-height:1.2">Laboratorio de Informática — Dpto. Matemática</h1>
-        <span style="font-size:13px;opacity:.85">Sistema de Reservas · FCEyT - UNSE</span>
+    <div>
+      <div style="display:flex;align-items:center;gap:12px">
+        <h1 style="font-size:20px;font-weight:600;line-height:1.2;color:#fff">Laboratorio de Informática — Dpto. Matemática</h1>
+        <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:52px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
       </div>
-      <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:52px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
+      <span style="font-size:13px;opacity:.85;color:#fff">Sistema de Reservas · FCEyT - UNSE</span>
     </div>
   </div>
 </div>
@@ -550,7 +519,7 @@ textarea{resize:vertical;min-height:60px}
   <button class="active" onclick="showSection('solicitar',this)">Nueva Reserva</button>
   <button onclick="showSection('calendario',this)">Calendario</button>
   <button onclick="showSection('reservas',this)">Ver Reservas</button>
-  <button onclick="showSection('admin',this)" id="btn-admin">Administración</button>
+  <button onclick="showSection('admin',this)" id="btn-admin" style="display:none">Administración</button>
 </div>
 <div class="container">
 
@@ -582,8 +551,15 @@ textarea{resize:vertical;min-height:60px}
         <p id="preview-semanal" style="font-size:12px;color:#718096;margin-top:.5rem"></p>
       </div>
       <div id="tipo-especifica" style="display:none">
-        <div class="form-group"><label>Agregar fecha *</label>
-          <div style="display:flex;gap:.5rem"><input type="date" id="fecha-esp-input" style="flex:1"><button class="btn btn-outline btn-sm" onclick="agregarFecha()">+ Agregar</button></div>
+        <div class="form-group">
+          <label>Agregar fecha con horario *</label>
+          <div class="esp-row">
+            <input type="date" id="fecha-esp-input">
+            <input type="time" id="esp-hi" step="1800">
+            <input type="time" id="esp-hf" step="1800">
+            <button class="btn btn-outline btn-sm" onclick="agregarFecha()">+ Agregar</button>
+          </div>
+          <div style="font-size:11px;color:#a0aec0">Fecha · Hora inicio · Hora fin — cada fecha puede tener horario distinto</div>
         </div>
         <div class="fecha-chip-row" id="fechas-chips"></div>
       </div>
@@ -645,6 +621,7 @@ textarea{resize:vertical;min-height:60px}
   </div>
 
 </div>
+
 <div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:500;align-items:center;justify-content:center">
   <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:2rem;max-width:420px;width:90%;text-align:center">
     <div id="modal-icon" style="width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem"></div>
@@ -653,5 +630,6 @@ textarea{resize:vertical;min-height:60px}
     <button class="btn btn-primary" onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%">Entendido</button>
   </div>
 </div>
+
 </body>
 </html>
