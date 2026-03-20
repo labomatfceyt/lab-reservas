@@ -1,0 +1,657 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Laboratorio de Informática — Dpto. Matemática</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-app.js";
+  import { getFirestore, collection, addDoc, getDocs, doc, updateDoc, deleteDoc, query, orderBy } from "https://www.gstatic.com/firebasejs/11.0.0/firebase-firestore.js";
+
+  const firebaseConfig = {
+    apiKey: "AIzaSyAtLwapu_Wi_xEhtZzpmqIeYJDlJsUxK9g",
+    authDomain: "lab-reservas-4ecef.firebaseapp.com",
+    projectId: "lab-reservas-4ecef",
+    storageBucket: "lab-reservas-4ecef.firebasestorage.app",
+    messagingSenderId: "589313529862",
+    appId: "1:589313529862:web:43caffa361150eea740b87"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db = getFirestore(app);
+
+  const MESES_ES=['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const DIAS_ES=['Lun','Mar','Mié','Jue','Vie','Sáb'];
+  const H_INI=8, H_FIN=21, PX_H=60;
+  let semanaOffset=0, tipoActual='puntual', fechasEspecificas=[], todasReservas=[];
+
+  const ADMIN_KEY='Labo@2026.';
+  let isAdmin=false;
+
+  window.addEventListener('DOMContentLoaded', async ()=>{
+    // verificar si viene con ?admin=Labo@2026. en la URL
+    const params=new URLSearchParams(window.location.search);
+    isAdmin=params.get('admin')===ADMIN_KEY;
+
+    // mostrar pestaña admin solo si es admin
+    const btnAdmin=document.getElementById('btn-admin');
+    if(isAdmin) btnAdmin.style.display='';
+    else btnAdmin.style.display='none';
+
+    populateHoras();
+    const today=new Date().toISOString().slice(0,10);
+    ['fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{
+      const el=document.getElementById(id);
+      if(el){el.value= id==='fecha-esp-input' ? '' : today; el.min=today;}
+    });
+    await cargarReservas();
+    if(isAdmin) updateNotifAdmin();
+  });
+
+  async function cargarReservas(){
+    try {
+      const q = query(collection(db,'reservas'), orderBy('fecha'));
+      const snap = await getDocs(q);
+      todasReservas = snap.docs.map(d=>({...d.data(), _docId: d.id}));
+      updateNotifAdmin();
+    } catch(e){ console.error('Error cargando reservas:',e); }
+  }
+
+  function isoDate(d){
+    const y=d.getFullYear(), m=String(d.getMonth()+1).padStart(2,'0'), dd=String(d.getDate()).padStart(2,'0');
+    return`${y}-${m}-${dd}`;
+  }
+  function parseLocalDate(str){
+    const[y,m,d]=str.split('-').map(Number);
+    return new Date(y,m-1,d);
+  }
+  function formatFecha(f){const[y,m,d]=f.split('-');return`${d} ${MESES_ES[parseInt(m)-1]} ${y}`;}
+  function t2min(t){const[h,m]=t.split(':').map(Number);return h*60+m;}
+
+  function getWeekDates(off){
+    const today=new Date(), dow=today.getDay()||7;
+    const mon=new Date(today); mon.setDate(today.getDate()-dow+1+off*7);
+    return Array.from({length:6},(_,i)=>{const d=new Date(mon);d.setDate(mon.getDate()+i);return d;});
+  }
+
+  function populateHoras(){
+    const optsIni=[], optsFin=[];
+    for(let h=H_INI;h<H_FIN;h++){
+      ['00','30'].forEach(m=>{
+        const t=`${String(h).padStart(2,'0')}:${m}`;
+        optsIni.push(`<option value="${t}">${t}</option>`);
+      });
+    }
+    for(let h=H_INI;h<=H_FIN;h++){
+      ['00','30'].forEach(m=>{
+        if(h===H_FIN&&m==='30') return;
+        const t=`${String(h).padStart(2,'0')}:${m}`;
+        optsFin.push(`<option value="${t}">${t}</option>`);
+      });
+    }
+    document.getElementById('hora-inicio').innerHTML=optsIni.join('');
+    document.getElementById('hora-fin').innerHTML=optsFin.join('');
+    document.getElementById('hora-inicio').value=`${String(H_INI).padStart(2,'0')}:00`;
+    document.getElementById('hora-fin').value=`${String(H_INI+1).padStart(2,'0')}:00`;
+  }
+
+  function populateHorasEspecifica(){
+    let optsIni='', optsFin='';
+    for(let h=H_INI;h<H_FIN;h++) ['00','30'].forEach(m=>{const t=`${String(h).padStart(2,'0')}:${m}`;optsIni+=`<option value="${t}">${t}</option>`;});
+    for(let h=H_INI;h<=H_FIN;h++) ['00','30'].forEach(m=>{if(h===H_FIN&&m==='30')return;const t=`${String(h).padStart(2,'0')}:${m}`;optsFin+=`<option value="${t}">${t}</option>`;});
+    const row=document.getElementById('esp-row');
+    // eliminar selectores previos si existen
+    ['esp-hi','esp-hf'].forEach(id=>{const el=document.getElementById(id);if(el)el.remove();});
+    // crear e insertar antes del botón
+    const btn=row.querySelector('button');
+    const selIni=document.createElement('select');
+    selIni.id='esp-hi'; selIni.style.width='90px'; selIni.innerHTML=optsIni;
+    selIni.value=`${String(H_INI).padStart(2,'0')}:00`;
+    row.insertBefore(selIni,btn);
+    const selFin=document.createElement('select');
+    selFin.id='esp-hf'; selFin.style.width='90px'; selFin.innerHTML=optsFin;
+    selFin.value=`${String(H_INI+1).padStart(2,'0')}:00`;
+    row.insertBefore(selFin,btn);
+  }
+
+  window.showSection = async function(id, btn){
+    document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+    document.querySelectorAll('.nav button').forEach(b=>b.classList.remove('active'));
+    document.getElementById(id).classList.add('active');
+    if(btn) btn.classList.add('active');
+    await cargarReservas();
+    if(id==='reservas'){actualizarFiltroDocentes();renderReservas();}
+    if(id==='admin') renderAdmin();
+    if(id==='calendario') renderCalendario();
+  };
+
+  window.setTipo = function(tipo, btn){
+    tipoActual=tipo;
+    document.querySelectorAll('.tipo-tab').forEach(b=>b.classList.remove('active')); btn.classList.add('active');
+    ['puntual','semanal','especifica'].forEach(t=>document.getElementById('tipo-'+t).style.display=t===tipo?'block':'none');
+    const today=new Date().toISOString().slice(0,10);
+    ['fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{
+      const el=document.getElementById(id);if(el) el.min=today;
+    });
+    // re-popular selectores de hora específica cada vez que se activa
+    if(tipo==='especifica'){
+      const today=isoDate(new Date());
+      document.getElementById('fecha-esp-input').min=today;
+    }
+  };
+
+  window.agregarFecha = function(){
+    const inp=document.getElementById('fecha-esp-input'), val=inp.value;
+    if(!val||fechasEspecificas.includes(val)) return;
+    fechasEspecificas.push(val); fechasEspecificas.sort(); renderChips(); inp.value='';
+  };
+  window.quitarFecha = function(f){fechasEspecificas=fechasEspecificas.filter(x=>x!==f);renderChips();};
+
+  function renderChips(){
+    document.getElementById('fechas-chips').innerHTML=fechasEspecificas.map(f=>`<div class="fecha-chip">${formatFecha(f)}<button onclick="quitarFecha('${f}')">&times;</button></div>`).join('');
+  }
+
+  document.addEventListener('change',e=>{if(e.target.id==='fecha-semanal-ini'||e.target.id==='meses-rep') updatePreviewSemanal();});
+
+  function updatePreviewSemanal(){
+    const ini=document.getElementById('fecha-semanal-ini').value, meses=parseInt(document.getElementById('meses-rep').value);
+    if(!ini) return;
+    const fechas=generarFechasSemana(ini,meses);
+    document.getElementById('preview-semanal').textContent=`Se crearán ${fechas.length} sesiones: ${formatFecha(fechas[0])} al ${formatFecha(fechas[fechas.length-1])}`;
+  }
+
+  function generarFechasSemana(ini,meses){
+    const fechas=[], fin=parseLocalDate(ini); fin.setMonth(fin.getMonth()+meses);
+    let cur=parseLocalDate(ini);
+    while(cur<=fin){fechas.push(isoDate(cur));cur.setDate(cur.getDate()+7);}
+    return fechas;
+  }
+
+  function mostrarModal(tipo, titulo, msg){
+    const iconEl=document.getElementById('modal-icon');
+    if(tipo==='exito'){
+      iconEl.style.background='#f0fff4';
+      iconEl.innerHTML='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#38a169" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+    } else {
+      iconEl.style.background='#fff5f5';
+      iconEl.innerHTML='<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#e53e3e" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>';
+    }
+    document.getElementById('modal-titulo').textContent=titulo;
+    document.getElementById('modal-msg').innerHTML=msg;
+    document.getElementById('modal-overlay').style.display='flex';
+  }
+
+  function showAlert(id,msg,type){
+    const el=document.getElementById(id);
+    el.className=`alert alert-${type}`; el.textContent=msg; el.style.display='block';
+    setTimeout(()=>el.style.display='none',5000);
+  }
+
+  function updateNotifAdmin(){
+    if(!isAdmin) return;
+    const pend=todasReservas.filter(r=>r.estado==='pendiente').length;
+    const btn=document.getElementById('btn-admin');
+    let dot=btn.querySelector('.badge-notif');
+    if(pend>0){
+      if(!dot){dot=document.createElement('span');dot.className='badge-notif';btn.appendChild(dot);}
+      dot.textContent=pend>9?'9+':pend;
+    } else if(dot) dot.remove();
+  }
+
+  function actualizarFiltroDocentes(){
+    const docentes=[...new Set(todasReservas.map(r=>r.docente))].sort();
+    const sel=document.getElementById('filtro-docente');
+    const cur=sel.value;
+    sel.innerHTML='<option value="">Todos los docentes</option>'+docentes.map(d=>`<option value="${d}"${d===cur?'selected':''}>${d}</option>`).join('');
+  }
+
+  window.enviarSolicitud = async function(){
+    const v=id=>document.getElementById(id).value.trim();
+    const docente=v('docente'), materia=v('materia'), hi=v('hora-inicio'), hf=v('hora-fin');
+    if(!docente||!materia||!hi||!hf) return showAlert('alert-form','Completá todos los campos obligatorios (*)','error');
+    if(hi>=hf) return showAlert('alert-form','La hora de fin debe ser posterior al inicio.','error');
+
+    let fechas=[];
+    if(tipoActual==='puntual'){const f=v('fecha-puntual');if(!f) return showAlert('alert-form','Seleccioná una fecha.','error');fechas=[f];}
+    else if(tipoActual==='semanal'){const ini=v('fecha-semanal-ini'),meses=parseInt(document.getElementById('meses-rep').value);if(!ini) return showAlert('alert-form','Seleccioná la fecha de inicio.','error');fechas=generarFechasSemana(ini,meses);}
+    else{if(!fechasEspecificas.length) return showAlert('alert-form','Agregá al menos una fecha.','error');fechas=[...fechasEspecificas];}
+
+    const conflictos=[];
+    fechas.forEach(f=>{
+      const cx=todasReservas.find(r=>r.fecha===f&&r.estado!=='cancelada'&&r.horaInicio<hf&&r.horaFin>hi);
+      if(cx) conflictos.push(`${formatFecha(f)} (conflicto con "${cx.materia}")`);
+    });
+    if(conflictos.length){
+      mostrarModal('error','No se puede realizar la reserva',
+        conflictos.map(c=>`⚠ ${c}`).join('<br>'));
+      return;
+    }
+
+    const grupoId=fechas.length>1?'g'+Date.now():null;
+    const base={docente,materia,carrera:v('carrera'),actividad:v('actividad'),obs:v('obs'),horaInicio:hi,horaFin:hf,estado:'pendiente',creado:new Date().toLocaleString('es-AR'),grupoId,totalGrupo:fechas.length};
+
+    try {
+      showAlert('alert-form','Guardando...','success');
+      for(const f of fechas){
+        await addDoc(collection(db,'reservas'),{...base,fecha:f});
+      }
+      ['docente','materia','carrera','actividad','obs','fecha-puntual','fecha-semanal-ini','fecha-esp-input'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
+      fechasEspecificas=[]; renderChips();
+      document.getElementById('preview-semanal').textContent='';
+      await cargarReservas();
+      mostrarModal('exito','¡Solicitud enviada!','Tu solicitud de reserva fue registrada correctamente.<br>Aguardá la confirmación del administrador.');
+      document.getElementById('alert-form').style.display='none';
+    } catch(e){ showAlert('alert-form','Error al guardar: '+e.message,'error'); }
+  };
+
+  window.cancelarReserva = async function(docId){
+    if(!docId){ alert('Error: ID de reserva no válido.'); return; }
+    if(!confirm('¿Cancelar esta reserva? Se eliminará de la lista.')) return;
+    try{
+      await deleteDoc(doc(db,'reservas',docId));
+      await cargarReservas();
+      window.renderReservas();
+      renderAdmin();
+    }catch(e){ alert('Error al eliminar: '+e.message); }
+  };
+
+  window.cancelarGrupo = async function(grupoId){
+    if(!grupoId){ alert('Error: ID de grupo no válido.'); return; }
+    if(!confirm('¿Eliminar todas las sesiones de este grupo?')) return;
+    try{
+      const todas=todasReservas.filter(r=>r.grupoId===grupoId);
+      if(!todas.length){ alert('No se encontraron sesiones para eliminar.'); return; }
+      for(const r of todas) await deleteDoc(doc(db,'reservas',r._docId));
+      await cargarReservas();
+      window.renderReservas();
+      renderAdmin();
+    }catch(e){ alert('Error al eliminar: '+e.message); }
+  };
+
+  window.cambiarEstado = async function(docId, estado){
+    try{
+      if(estado==='cancelada') await deleteDoc(doc(db,'reservas',docId));
+      else await updateDoc(doc(db,'reservas',docId),{estado});
+      await cargarReservas(); renderAdmin();
+    }catch(e){ alert('Error: '+e.message); }
+  };
+
+  window.cambiarGrupo = async function(grupoId, estado){
+    try{
+      const pend=todasReservas.filter(r=>r.grupoId===grupoId&&r.estado==='pendiente');
+      for(const r of pend){
+        if(estado==='cancelada') await deleteDoc(doc(db,'reservas',r._docId));
+        else await updateDoc(doc(db,'reservas',r._docId),{estado});
+      }
+      await cargarReservas(); renderAdmin();
+    }catch(e){ alert('Error: '+e.message); }
+  };
+
+  window.cerrarModal = function(){
+    document.getElementById('modal-overlay').style.display='none';
+  };
+
+  window.toggleSesiones = function(id){
+    const el=document.getElementById(id); el.style.display=el.style.display==='none'?'flex':'none';
+  };
+
+  window.renderReservas = function(){
+    const fe=document.getElementById('filtro-estado').value;
+    const buscar=document.getElementById('buscar').value.toLowerCase();
+    const docenteF=document.getElementById('filtro-docente').value;
+    const reales=todasReservas;
+    document.getElementById('stat-total').textContent=reales.length;
+    document.getElementById('stat-conf').textContent=reales.filter(r=>r.estado==='confirmada').length;
+    document.getElementById('stat-pend').textContent=reales.filter(r=>r.estado==='pendiente').length;
+
+    const filtrada=reales.filter(r=>{
+      if(fe&&r.estado!==fe) return false;
+      if(docenteF&&r.docente!==docenteF) return false;
+      if(buscar&&!r.docente.toLowerCase().includes(buscar)&&!r.materia.toLowerCase().includes(buscar)) return false;
+      return true;
+    });
+
+    const grupos={}, singles=[];
+    filtrada.forEach(r=>{if(r.grupoId){if(!grupos[r.grupoId])grupos[r.grupoId]=[];grupos[r.grupoId].push(r);}else singles.push(r);});
+    const items=[...singles.map(r=>({tipo:'single',r})),...Object.values(grupos).map(s=>({tipo:'grupo',sesiones:s}))];
+    items.sort((a,b)=>{const fa=a.tipo==='single'?a.r.fecha:a.sesiones[0].fecha,fb=b.tipo==='single'?b.r.fecha:b.sesiones[0].fecha;return fa<fb?-1:1;});
+
+    const cont=document.getElementById('lista-reservas');
+    if(!items.length){cont.innerHTML='<div class="empty">No se encontraron reservas.</div>';return;}
+    cont.innerHTML=items.map(item=>{
+      if(item.tipo==='single'){
+        const r=item.r, canC=r.estado==='confirmada'||r.estado==='pendiente';
+        return`<div class="reserva-item"><div class="ri-top"><div class="reserva-info">
+          <h3>${r.materia}${r.carrera?' — '+r.carrera:''}</h3>
+          <p>Docente: <strong>${r.docente}</strong>${r.actividad?' · '+r.actividad:''}</p>
+          <div class="reserva-meta"><span class="meta-tag">${formatFecha(r.fecha)}</span><span class="meta-tag">${r.horaInicio}–${r.horaFin}</span>${r.obs?`<span class="meta-tag" title="${r.obs}">Obs.</span>`:''}</div>
+          </div><div class="reserva-actions"><span class="badge badge-${r.estado}">${r.estado}</span>
+          ${canC?`<button class="btn btn-danger btn-sm" onclick="cancelarReserva('${r._docId}')">Cancelar</button>`:''}
+          <small style="font-size:10px;color:#a0aec0">${r.creado}</small></div></div></div>`;
+      } else {
+        const s0=item.sesiones[0], sId='ses-'+s0.grupoId;
+        const activas=item.sesiones.filter(s=>s.estado!=='cancelada').length;
+        return`<div class="reserva-item grupo-header"><div class="ri-top"><div class="reserva-info">
+          <h3>${s0.materia}${s0.carrera?' — '+s0.carrera:''} <span class="badge badge-grupo">Grupo · ${item.sesiones.length} sesiones</span></h3>
+          <p>Docente: <strong>${s0.docente}</strong>${s0.actividad?' · '+s0.actividad:''}</p>
+          <div class="reserva-meta"><span class="meta-tag">${formatFecha(item.sesiones[0].fecha)} al ${formatFecha(item.sesiones[item.sesiones.length-1].fecha)}</span><span class="meta-tag">${s0.horaInicio}–${s0.horaFin}</span><span class="meta-tag">${activas} activas</span></div>
+          <button class="toggle-sesiones" onclick="toggleSesiones('${sId}')">Ver sesiones &#9660;</button>
+          </div><div class="reserva-actions">
+          <button class="btn btn-danger btn-sm" onclick="cancelarGrupo('${s0.grupoId}')">Cancelar grupo</button>
+          <small style="font-size:10px;color:#a0aec0">${s0.creado}</small></div></div>
+          <div class="sesiones-list" id="${sId}" style="display:none">
+          ${item.sesiones.map(s=>{const canC=s.estado==='confirmada'||s.estado==='pendiente';return`
+            <div class="sesion-item${s.estado==='cancelada'?' cancelada':''}">
+              <span>${formatFecha(s.fecha)} · ${s.horaInicio}–${s.horaFin}</span>
+              <div style="display:flex;align-items:center;gap:6px"><span class="badge badge-${s.estado}">${s.estado}</span>
+              ${canC?`<button class="btn btn-danger btn-sm" onclick="cancelarReserva('${s._docId}')">Cancelar</button>`:''}</div>
+            </div>`;}).join('')}
+          </div></div>`;
+      }
+    }).join('');
+  };
+
+  function renderAdmin(){
+    const grupos={}, singles=[];
+    todasReservas.filter(r=>r.estado==='pendiente').forEach(r=>{if(r.grupoId){if(!grupos[r.grupoId])grupos[r.grupoId]=[];grupos[r.grupoId].push(r);}else singles.push(r);});
+    const cont=document.getElementById('lista-admin');
+    const items=[...singles.map(r=>({tipo:'single',r})),...Object.values(grupos).map(s=>({tipo:'grupo',sesiones:s}))];
+    if(!items.length){cont.innerHTML='<div class="empty">No hay solicitudes pendientes.</div>';return;}
+    cont.innerHTML=items.map(item=>{
+      if(item.tipo==='single'){const r=item.r;return`<div class="reserva-item"><div class="ri-top"><div class="reserva-info">
+        <h3>${r.materia}${r.carrera?' — '+r.carrera:''}</h3><p>Docente: <strong>${r.docente}</strong></p>
+        <div class="reserva-meta"><span class="meta-tag">${formatFecha(r.fecha)}</span><span class="meta-tag">${r.horaInicio}–${r.horaFin}</span>${r.actividad?`<span class="meta-tag">${r.actividad}</span>`:''}</div>
+        ${r.obs?`<p style="font-size:12px;color:#718096;margin-top:5px">Obs: ${r.obs}</p>`:''}
+        </div><div class="reserva-actions">
+        <button class="btn btn-success btn-sm" onclick="cambiarEstado('${r._docId}','confirmada')">Confirmar</button>
+        <button class="btn btn-danger btn-sm" onclick="cambiarEstado('${r._docId}','cancelada')">Rechazar</button>
+        </div></div></div>`;}
+      else{const s0=item.sesiones[0],sId='adm-'+s0.grupoId;return`<div class="reserva-item grupo-header"><div class="ri-top"><div class="reserva-info">
+        <h3>${s0.materia}${s0.carrera?' — '+s0.carrera:''} <span class="badge badge-grupo">Grupo · ${item.sesiones.length} sesiones</span></h3>
+        <p>Docente: <strong>${s0.docente}</strong>${s0.actividad?' · '+s0.actividad:''}</p>
+        <div class="reserva-meta"><span class="meta-tag">${formatFecha(item.sesiones[0].fecha)} al ${formatFecha(item.sesiones[item.sesiones.length-1].fecha)}</span><span class="meta-tag">${s0.horaInicio}–${s0.horaFin}</span></div>
+        <button class="toggle-sesiones" onclick="toggleSesiones('${sId}')">Ver sesiones &#9660;</button>
+        </div><div class="reserva-actions">
+        <button class="btn btn-success btn-sm" onclick="cambiarGrupo('${s0.grupoId}','confirmada')">Confirmar todo</button>
+        <button class="btn btn-danger btn-sm" onclick="cambiarGrupo('${s0.grupoId}','cancelada')">Rechazar todo</button>
+        </div></div>
+        <div class="sesiones-list" id="${sId}" style="display:none">
+        ${item.sesiones.map(s=>`<div class="sesion-item"><span>${formatFecha(s.fecha)} · ${s.horaInicio}–${s.horaFin}</span>
+          <div style="display:flex;gap:6px">
+          <button class="btn btn-success btn-sm" onclick="cambiarEstado('${s._docId}','confirmada')">Confirmar</button>
+          <button class="btn btn-danger btn-sm" onclick="cambiarEstado('${s._docId}','cancelada')">Rechazar</button>
+          </div></div>`).join('')}
+        </div></div>`;}
+    }).join('');
+  }
+
+  window.moverSemana = function(dir){semanaOffset=dir===0?0:semanaOffset+dir;renderCalendario();};
+
+  function renderCalendario(){
+    const dias=getWeekDates(semanaOffset), todayStr=isoDate(new Date());
+    const ini=dias[0], fin=dias[5];
+    document.getElementById('cal-titulo').textContent=`${ini.getDate()} ${MESES_ES[ini.getMonth()]} — ${fin.getDate()} ${MESES_ES[fin.getMonth()]} ${fin.getFullYear()}`;
+    let head=`<div class="gcal-head-tz"></div>`;
+    dias.forEach(d=>{const ds=isoDate(d),isT=ds===todayStr;head+=`<div class="gcal-head-day${isT?' today':''}"><span class="num">${d.getDate()}</span>${DIAS_ES[(d.getDay()+6)%7]}</div>`;});
+    document.getElementById('gcal-head').innerHTML=head;
+    const totalH=H_FIN-H_INI;
+    let th=`<div class="gcal-hour-label">08</div>`;
+    for(let h=H_INI+1;h<=H_FIN;h++){const lb=h<12?`${h} AM`:h===12?'12 PM':h===21?'21':`${h-12} PM`;th+=`<div class="gcal-hour-label">${lb}</div>`;}
+    document.getElementById('gcal-times').innerHTML=th;
+    const gridH=totalH*PX_H; let dh='';
+    dias.forEach(d=>{
+      const ds=isoDate(d); let col=`<div class="gcal-day-col" style="height:${gridH}px">`;
+      for(let h=0;h<=totalH;h++) col+=`<div class="gcal-hline" style="top:${h*PX_H}px"></div>`;
+      todasReservas.filter(r=>r.fecha===ds).forEach(r=>{
+        const top=(t2min(r.horaInicio)-H_INI*60)/60*PX_H, height=(t2min(r.horaFin)-t2min(r.horaInicio))/60*PX_H-3;
+        const lbl=r.materia.length>22?r.materia.slice(0,20)+'…':r.materia;
+        col+=`<div class="gcal-block ${r.estado}" style="top:${top}px;height:${height}px" title="${r.materia} · ${r.docente}"><strong>${lbl}</strong><span>${r.docente.split(' ').slice(0,2).join(' ')}</span><span>${r.horaInicio}–${r.horaFin}</span></div>`;
+      });
+      col+='</div>'; dh+=col;
+    });
+    document.getElementById('gcal-days').innerHTML=dh;
+  }
+
+  window.exportarExcel = function(){
+    const filas=todasReservas.map(r=>({'Fecha':formatFecha(r.fecha),'Horario':r.horaInicio+'-'+r.horaFin,'Materia':r.materia,'Docente':r.docente,'Carrera':r.carrera||'','Actividad':r.actividad||'','Estado':r.estado,'Obs.':r.obs||''}));
+    const ws=XLSX.utils.json_to_sheet(filas);
+    const wb=XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb,ws,'Reservas');
+    XLSX.writeFile(wb,'reservas_laboratorio.xlsx');
+  };
+
+  window.exportarTXT = function(){
+    const colW=[28,20,52,40,36,32,22];
+    const pad=(s,w)=>{const str=String(s||'');return str.length>=w?str.slice(0,w-1)+'…':str+' '.repeat(w-str.length);};
+    const header=['Fecha','Horario','Materia','Docente','Carrera','Actividad','Estado'];
+    const line=colW.map(w=>'─'.repeat(w)).join('┬');
+    const lineM=colW.map(w=>'─'.repeat(w)).join('┼');
+    const lineB=colW.map(w=>'─'.repeat(w)).join('┴');
+    const fmtRow=cols=>'│'+cols.map((c,i)=>pad(c,colW[i])).join('│')+'│';
+    let txt=`LABORATORIO DE INFORMÁTICA — RESERVAS\nGenerado: ${new Date().toLocaleString('es-AR')}\nTotal: ${todasReservas.length} reservas\n\n`;
+    txt+='┌'+line+'┐\n'+fmtRow(header)+'\n'+'├'+lineM+'┤\n';
+    todasReservas.forEach(r=>txt+=fmtRow([formatFecha(r.fecha),r.horaInicio+'–'+r.horaFin,r.materia,r.docente,r.carrera||'',r.actividad||'',r.estado])+'\n');
+    txt+='└'+lineB+'┘\n';
+    const blob=new Blob([txt],{type:'text/plain;charset=utf-8'});
+    const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='reservas_laboratorio.txt';
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  };
+</script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:system-ui,sans-serif;background:#f0f4f8;color:#1a202c;min-height:100vh}
+.header{background:#1a56db;color:#fff;padding:1rem 1.5rem}
+.header h1{font-size:18px;font-weight:500}
+.header span{font-size:13px;opacity:.8}
+.nav{display:flex;background:#fff;border-bottom:1px solid #e2e8f0}
+.nav button{flex:1;padding:.75rem .25rem;border:none;background:none;cursor:pointer;font-size:12px;font-weight:500;color:#718096;border-bottom:2px solid transparent;transition:.2s;position:relative}
+.nav button.active{color:#1a56db;border-bottom-color:#1a56db}
+.badge-notif{position:absolute;top:6px;right:calc(50% - 18px);background:#e53e3e;color:#fff;border-radius:50%;width:16px;height:16px;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center}
+.container{max-width:1000px;margin:0 auto;padding:1.5rem}
+.card{background:#fff;border-radius:10px;border:1px solid #e2e8f0;padding:1.5rem;margin-bottom:1rem}
+.card h2{font-size:15px;font-weight:600;color:#2d3748;margin-bottom:1rem;padding-bottom:.75rem;border-bottom:1px solid #f0f4f8}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:1rem}
+.form-group{display:flex;flex-direction:column;gap:4px}
+.form-group.full{grid-column:1/-1}
+label{font-size:12px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.5px}
+input,select,textarea{padding:.6rem .75rem;border:1px solid #e2e8f0;border-radius:6px;font-size:14px;color:#2d3748;width:100%;background:#fff}
+input:focus,select:focus,textarea:focus{outline:none;border-color:#1a56db;box-shadow:0 0 0 3px rgba(26,86,219,.1)}
+textarea{resize:vertical;min-height:60px}
+.btn{padding:.6rem 1.25rem;border-radius:6px;font-size:14px;font-weight:500;cursor:pointer;border:none;transition:.15s}
+.btn-primary{background:#1a56db;color:#fff}.btn-primary:hover{background:#1648c0}
+.btn-danger{background:#fff;color:#e53e3e;border:1px solid #fed7d7}.btn-danger:hover{background:#fff5f5}
+.btn-success{background:#fff;color:#38a169;border:1px solid #c6f6d5}
+.btn-outline{background:#fff;color:#4a5568;border:1px solid #e2e8f0}.btn-outline:hover{background:#f7fafc}
+.btn-excel{background:#fff;color:#276749;border:1px solid #c6f6d5}.btn-excel:hover{background:#f0fff4}
+.btn-txt{background:#fff;color:#744210;border:1px solid #fbd38d}.btn-txt:hover{background:#fffff0}
+.btn-sm{padding:.35rem .75rem;font-size:12px}
+.actions{display:flex;justify-content:flex-end;margin-top:1.25rem}
+.badge{display:inline-block;padding:.2rem .6rem;border-radius:20px;font-size:11px;font-weight:600}
+.badge-pendiente{background:#fefcbf;color:#b7791f}
+.badge-confirmada{background:#c6f6d5;color:#276749}
+.badge-cancelada{background:#fed7d7;color:#9b2c2c}
+.badge-grupo{background:#e9d8fd;color:#553c9a;font-size:10px;padding:.15rem .5rem}
+.reservas-list{display:flex;flex-direction:column;gap:.75rem}
+.reserva-item{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:1rem}
+.reserva-item.grupo-header{border-left:3px solid #805ad5}
+.ri-top{display:grid;grid-template-columns:1fr auto;gap:.5rem;align-items:start}
+.reserva-info h3{font-size:14px;font-weight:600;color:#2d3748}
+.reserva-info p{font-size:12px;color:#718096;margin-top:2px}
+.reserva-meta{display:flex;gap:6px;margin-top:.5rem;flex-wrap:wrap}
+.meta-tag{background:#f0f4f8;border-radius:4px;padding:2px 8px;font-size:11px;color:#4a5568}
+.reserva-actions{display:flex;gap:6px;flex-direction:column;align-items:flex-end}
+.sesiones-list{margin-top:.75rem;border-top:1px solid #f0f4f8;padding-top:.75rem;display:flex;flex-direction:column;gap:.5rem}
+.sesion-item{display:flex;align-items:center;justify-content:space-between;padding:.4rem .6rem;border-radius:6px;background:#f7fafc;font-size:12px}
+.sesion-item.cancelada{opacity:.6;text-decoration:line-through}
+.toggle-sesiones{background:none;border:none;cursor:pointer;font-size:12px;color:#1a56db;padding:0;margin-top:.5rem}
+.empty{text-align:center;padding:3rem 1rem;color:#a0aec0;font-size:14px}
+.alert{padding:.75rem 1rem;border-radius:6px;margin-bottom:1rem;font-size:13px;display:none}
+.alert-error{background:#fff5f5;border:1px solid #fed7d7;color:#c53030}
+.alert-success{background:#f0fff4;border:1px solid #c6f6d5;color:#276749}
+.toolbar{display:flex;gap:.5rem;margin-bottom:1rem;flex-wrap:wrap;align-items:center}
+.toolbar select,.toolbar input{width:auto;font-size:13px;padding:.45rem .7rem}
+.toolbar input{min-width:200px}
+.toolbar-right{margin-left:auto;display:flex;gap:.5rem}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:.75rem;margin-bottom:1.5rem}
+.stat-card{background:#fff;border:1px solid #e2e8f0;border-radius:8px;padding:1rem;text-align:center}
+.stat-num{font-size:26px;font-weight:600;color:#1a56db}
+.stat-label{font-size:11px;color:#718096;margin-top:2px}
+.section{display:none}.section.active{display:block}
+.tipo-tabs{display:flex;gap:8px;margin-bottom:1.25rem;flex-wrap:wrap}
+.tipo-tab{padding:.45rem 1rem;border-radius:20px;font-size:13px;font-weight:500;cursor:pointer;border:1px solid #e2e8f0;background:#fff;color:#718096;transition:.15s}
+.tipo-tab.active{background:#1a56db;color:#fff;border-color:#1a56db}
+.fecha-chip-row{display:flex;gap:.5rem;flex-wrap:wrap;margin-top:.5rem}
+.fecha-chip{background:#ebf4ff;color:#1a56db;border-radius:20px;padding:.2rem .7rem;font-size:12px;display:flex;align-items:center;gap:5px}
+.fecha-chip button{background:none;border:none;cursor:pointer;color:#1a56db;font-size:14px;line-height:1;padding:0}
+.cal-nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:1rem;flex-wrap:wrap;gap:.5rem}
+.cal-nav h3{font-size:14px;font-weight:600;color:#4a5568}
+.cal-nav-btns{display:flex;gap:6px}
+.gcal{display:flex;flex-direction:column;border:1px solid #e2e8f0;border-radius:8px;overflow:hidden;background:#fff}
+.gcal-head{display:grid;grid-template-columns:52px repeat(6,1fr);border-bottom:1px solid #e2e8f0;background:#f7fafc}
+.gcal-head-tz{border-right:1px solid #e2e8f0}
+.gcal-head-day{padding:.5rem .25rem;text-align:center;border-right:1px solid #e2e8f0;font-size:11px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.4px}
+.gcal-head-day:last-child{border-right:none}
+.gcal-head-day .num{display:block;font-size:22px;font-weight:600;color:#2d3748;line-height:1.1;margin-bottom:2px}
+.gcal-head-day.today .num{background:#1a56db;color:#fff;border-radius:50%;width:32px;height:32px;line-height:32px;margin:0 auto 2px}
+.gcal-head-day.today{color:#1a56db}
+.gcal-body{display:flex;overflow-y:auto;max-height:520px}
+.gcal-times{width:52px;flex-shrink:0;border-right:1px solid #e2e8f0}
+.gcal-hour-label{height:60px;display:flex;align-items:flex-start;justify-content:flex-end;padding:0 6px 0 0;font-size:10px;color:#a0aec0;transform:translateY(-7px)}
+.gcal-hour-label:first-child{visibility:hidden}
+.gcal-days{flex:1;display:grid;grid-template-columns:repeat(6,1fr)}
+.gcal-day-col{border-right:1px solid #f0f4f8;position:relative}
+.gcal-day-col:last-child{border-right:none}
+.gcal-hline{position:absolute;left:0;right:0;border-top:1px solid #e2e8f0;pointer-events:none}
+.gcal-block{position:absolute;left:3px;right:3px;border-radius:5px;padding:4px 6px;font-size:11px;cursor:default;overflow:hidden;border-left:3px solid transparent}
+.gcal-block.confirmada{background:#c6f6d5;border-left-color:#38a169;color:#276749}
+.gcal-block.pendiente{background:#fefcbf;border-left-color:#d69e2e;color:#7b6914}
+.gcal-block.cancelada{background:#fff5f5;border-left-color:#e53e3e;color:#c53030;opacity:.6}
+.gcal-block strong{display:block;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gcal-block span{display:block;font-size:10px;opacity:.85;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.legend{display:flex;gap:1rem;font-size:11px;margin-top:.75rem;flex-wrap:wrap}
+.legend-item{display:flex;align-items:center;gap:5px}
+.legend-dot{width:12px;height:10px;border-radius:2px;border-left:3px solid transparent}
+@media(max-width:640px){.form-grid{grid-template-columns:1fr}.stats{grid-template-columns:1fr 1fr}.toolbar-right{margin-left:0}}
+</style>
+</head>
+<body>
+<div class="header" style="padding:1rem 1.5rem">
+  <div style="display:flex;align-items:center;justify-content:space-between">
+    <div style="display:flex;align-items:center;gap:16px">
+      <div>
+        <h1 style="font-size:20px;font-weight:600;line-height:1.2">Laboratorio de Informática — Dpto. Matemática</h1>
+        <span style="font-size:13px;opacity:.85">Sistema de Reservas · FCEyT - UNSE</span>
+      </div>
+      <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:52px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
+    </div>
+  </div>
+</div>
+<div class="nav">
+  <button class="active" onclick="showSection('solicitar',this)">Nueva Reserva</button>
+  <button onclick="showSection('calendario',this)">Calendario</button>
+  <button onclick="showSection('reservas',this)">Ver Reservas</button>
+  <button onclick="showSection('admin',this)" id="btn-admin">Administración</button>
+</div>
+<div class="container">
+
+  <div id="solicitar" class="section active">
+    <div class="card">
+      <h2>Solicitar Reserva del Laboratorio</h2>
+      <div id="alert-form" class="alert"></div>
+      <div class="form-grid" style="margin-bottom:1rem">
+        <div class="form-group"><label>Docente responsable *</label><input type="text" id="docente" placeholder="Nombre completo"></div>
+        <div class="form-group"><label>Materia / Curso *</label><input type="text" id="materia" placeholder="Ej: Bases de Datos II"></div>
+        <div class="form-group"><label>Carrera</label><input type="text" id="carrera" placeholder="Ej: Ing. en Sistemas"></div>
+        <div class="form-group"><label>Actividad</label><input type="text" id="actividad" placeholder="Ej: Práctica, Examen..."></div>
+        <div class="form-group"><label>Hora de inicio *</label><select id="hora-inicio"></select></div>
+        <div class="form-group"><label>Hora de fin *</label><select id="hora-fin"></select></div>
+        <div class="form-group full"><label>Observaciones</label><textarea id="obs" placeholder="Software requerido, necesidades especiales, etc."></textarea></div>
+      </div>
+      <label style="font-size:12px;font-weight:600;color:#718096;text-transform:uppercase;letter-spacing:.5px;display:block;margin-bottom:.5rem">Tipo de reserva *</label>
+      <div class="tipo-tabs">
+        <button class="tipo-tab active" onclick="setTipo('puntual',this)">Fecha puntual</button>
+        <button class="tipo-tab" onclick="setTipo('semanal',this)">Repetitiva semanal</button>
+        <button class="tipo-tab" onclick="setTipo('especifica',this)">Fechas específicas</button>
+      </div>
+      <div id="tipo-puntual"><div class="form-group"><label>Fecha *</label><input type="date" id="fecha-puntual"></div></div>
+      <div id="tipo-semanal" style="display:none">
+        <div class="form-grid">
+          <div class="form-group"><label>Fecha de inicio *</label><input type="date" id="fecha-semanal-ini"></div>
+          <div class="form-group"><label>Duración *</label><select id="meses-rep"><option value="1">1 mes</option><option value="2">2 meses</option><option value="3">3 meses</option><option value="4">4 meses</option></select></div>
+        </div>
+        <p id="preview-semanal" style="font-size:12px;color:#718096;margin-top:.5rem"></p>
+      </div>
+      <div id="tipo-especifica" style="display:none">
+        <div class="form-group"><label>Agregar fecha *</label>
+          <div style="display:flex;gap:.5rem"><input type="date" id="fecha-esp-input" style="flex:1"><button class="btn btn-outline btn-sm" onclick="agregarFecha()">+ Agregar</button></div>
+        </div>
+        <div class="fecha-chip-row" id="fechas-chips"></div>
+      </div>
+      <div class="actions"><button class="btn btn-primary" onclick="enviarSolicitud()">Enviar Solicitud</button></div>
+    </div>
+  </div>
+
+  <div id="calendario" class="section">
+    <div class="card">
+      <div class="cal-nav">
+        <div class="cal-nav-btns">
+          <button class="btn btn-outline btn-sm" onclick="moverSemana(-1)">&#8592; Anterior</button>
+          <button class="btn btn-outline btn-sm" onclick="moverSemana(0)">Hoy</button>
+          <button class="btn btn-outline btn-sm" onclick="moverSemana(1)">Siguiente &#8594;</button>
+        </div>
+        <h3 id="cal-titulo"></h3>
+      </div>
+      <div class="gcal">
+        <div class="gcal-head" id="gcal-head"></div>
+        <div class="gcal-body"><div class="gcal-times" id="gcal-times"></div><div class="gcal-days" id="gcal-days"></div></div>
+      </div>
+      <div class="legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#c6f6d5;border-left-color:#38a169"></div><span>Confirmada</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fefcbf;border-left-color:#d69e2e"></div><span>Pendiente</span></div>
+        <div class="legend-item"><div class="legend-dot" style="background:#fff5f5;border-left-color:#e53e3e"></div><span>Cancelada</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="reservas" class="section">
+    <div class="stats">
+      <div class="stat-card"><div class="stat-num" id="stat-total">0</div><div class="stat-label">Total</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-conf" style="color:#38a169">0</div><div class="stat-label">Confirmadas</div></div>
+      <div class="stat-card"><div class="stat-num" id="stat-pend" style="color:#d69e2e">0</div><div class="stat-label">Pendientes</div></div>
+    </div>
+    <div class="toolbar">
+      <input type="text" id="buscar" placeholder="Buscar por docente o materia..." oninput="renderReservas()">
+      <select id="filtro-estado" onchange="renderReservas()">
+        <option value="">Todos los estados</option>
+        <option value="pendiente">Pendiente</option>
+        <option value="confirmada">Confirmada</option>
+        <option value="cancelada">Cancelada</option>
+      </select>
+      <select id="filtro-docente" onchange="renderReservas()"><option value="">Todos los docentes</option></select>
+      <div class="toolbar-right">
+        <button class="btn btn-excel btn-sm" onclick="exportarExcel()">&#8595; Excel</button>
+        <button class="btn btn-txt btn-sm" onclick="exportarTXT()">&#8595; .txt</button>
+      </div>
+    </div>
+    <div id="lista-reservas" class="reservas-list"></div>
+  </div>
+
+  <div id="admin" class="section">
+    <div class="card" style="border-left:4px solid #1a56db">
+      <h2>Panel de Administración</h2>
+      <p style="font-size:13px;color:#718096">Gestioná las solicitudes pendientes de aprobación.</p>
+    </div>
+    <div id="lista-admin" class="reservas-list"></div>
+  </div>
+
+</div>
+<div id="modal-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:500;align-items:center;justify-content:center">
+  <div style="background:#fff;border-radius:12px;border:1px solid #e2e8f0;padding:2rem;max-width:420px;width:90%;text-align:center">
+    <div id="modal-icon" style="width:52px;height:52px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem"></div>
+    <h2 id="modal-titulo" style="font-size:16px;font-weight:600;color:#2d3748;margin-bottom:.5rem"></h2>
+    <p id="modal-msg" style="font-size:14px;color:#718096;line-height:1.6;margin-bottom:1.5rem"></p>
+    <button class="btn btn-primary" onclick="document.getElementById('modal-overlay').style.display='none'" style="width:100%">Entendido</button>
+  </div>
+</div>
+</body>
+</html>
