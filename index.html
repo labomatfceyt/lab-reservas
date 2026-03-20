@@ -227,7 +227,14 @@
       fechasEspecificas=[];renderChips();
       document.getElementById('preview-semanal').textContent='';
       await cargarReservas();
-      mostrarModal('exito','¡Solicitud enviada!','Tu solicitud de reserva fue registrada correctamente.<br>Aguardá la confirmación del administrador.');
+      // armar mensaje WhatsApp
+      const detalles=tipoActual==='especifica'
+        ? fechasEspecificas.map(fe=>`• ${formatFecha(fe.fecha)} ${fe.hi}–${fe.hf}`).join('\n')
+        : fechas.map(f=>`• ${formatFecha(f)} ${hi}–${hf}`).join('\n');
+      const msg=`🔔 *Nueva solicitud de reserva*\n\n*Docente:* ${docente}\n*Materia:* ${materia}${v('carrera')?'\n*Carrera:* '+v('carrera'):''}\n*Actividad:* ${v('actividad')||'—'}\n*Fechas y horarios:*\n${detalles}${v('obs')?'\n*Obs:* '+v('obs'):''}\n\n_Aguarda confirmación del administrador._`;
+      const waUrl=`https://wa.me/543854040774?text=${encodeURIComponent(msg)}`;
+      window.open(waUrl,'_blank');
+      mostrarModal('exito','¡Solicitud enviada!','Tu solicitud fue registrada correctamente.<br>Se abrió WhatsApp para notificar al administrador.<br>Aguardá la confirmación.');
     }catch(e){mostrarModal('error','Error al guardar',e.message);}
   };
 
@@ -504,15 +511,13 @@ textarea{resize:vertical;min-height:60px}
 </style>
 </head>
 <body>
-<div class="header" style="padding:1rem 1.5rem">
-  <div style="display:flex;align-items:center;justify-content:space-between">
-    <div>
-      <div style="display:flex;align-items:center;gap:12px">
-        <h1 style="font-size:20px;font-weight:600;line-height:1.2;color:#fff">Laboratorio de Informática — Dpto. Matemática</h1>
-        <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:52px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0">
-      </div>
+<div class="header" style="padding:0 1.5rem">
+  <div style="display:flex;align-items:stretch;justify-content:space-between;min-height:80px">
+    <div style="display:flex;flex-direction:column;justify-content:center;gap:4px">
+      <h1 style="font-size:20px;font-weight:600;line-height:1.2;color:#fff">Laboratorio de Informática — Dpto. Matemática</h1>
       <span style="font-size:13px;opacity:.85;color:#fff">Sistema de Reservas · FCEyT - UNSE</span>
     </div>
+    <img src="https://fce.unse.edu.ar/sites/default/files/Logo%20FCEyT%20con%20leyenda%20UNse%20-%20p%C3%A1gina%20web.png" alt="FCEyT" style="height:80px;width:auto;object-fit:contain;filter:brightness(0) invert(1);flex-shrink:0;align-self:stretch;padding:8px 0">
   </div>
 </div>
 <div class="nav">
