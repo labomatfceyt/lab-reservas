@@ -93,9 +93,13 @@
     const today=isoDate(new Date());
     document.getElementById('fecha-puntual').min=today;
     document.getElementById('fecha-semanal-ini').min=today;
-    if(tipo==='especifica'){
-      document.getElementById('fecha-esp-input').min=today;
-    }
+    if(tipo==='especifica') document.getElementById('fecha-esp-input').min=today;
+    const esEsp=tipo==='especifica';
+    const hi=document.getElementById('hora-inicio');
+    const hf=document.getElementById('hora-fin');
+    hi.disabled=esEsp; hf.disabled=esEsp;
+    hi.style.opacity=esEsp?'0.45':'1'; hf.style.opacity=esEsp?'0.45':'1';
+    hi.style.cursor=esEsp?'not-allowed':''; hf.style.cursor=esEsp?'not-allowed':'';
   };
 
   window.agregarFecha=function(){
