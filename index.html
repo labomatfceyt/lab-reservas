@@ -245,6 +245,17 @@
         : fechas.map(f=>`• ${formatFecha(f)} ${hi}–${hf}`).join('\n');
       const msg=`🔔 *Nueva solicitud de reserva*\n\n*Docente:* ${docente}\n*Materia:* ${materia}${v('carrera')?'\n*Carrera:* '+v('carrera'):''}\n*Actividad:* ${v('actividad')||'—'}\n*Fechas y horarios:*\n${detalles}${v('obs')?'\n*Obs:* '+v('obs'):''}\n\n_Aguarda confirmación del administrador._`;
       const waUrl=`https://wa.me/543854040774?text=${encodeURIComponent(msg)}`;
+      // Notificación email al administrador via Formspree
+      try{
+        await fetch('https://formspree.io/f/mpqoqbpo',{
+          method:'POST',
+          headers:{'Content-Type':'application/json','Accept':'application/json'},
+          body:JSON.stringify({
+            subject:'Nueva solicitud de reserva — '+docente,
+            message:'Nueva solicitud de reserva del Laboratorio\n\nDocente: '+docente+'\nMateria: '+materia+'\nCarrera: '+(v('carrera')||'—')+'\nActividad: '+(v('actividad')||'—')+'\nFechas y horarios:\n'+detalles+'\nObservaciones: '+(v('obs')||'—')+'\n\nIngresá al panel de administración para confirmar o rechazar.'
+          })
+        });
+      }catch(ignored){}
       mostrarModal('exito','¡Solicitud enviada!','Tu solicitud fue registrada correctamente.<br>Aguardá la confirmación del administrador.',waUrl);
     }catch(e){mostrarModal('error','Error al guardar',e.message);}
   };
